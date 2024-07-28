@@ -1,3 +1,34 @@
+type EditProposalPayload = record {
+  id : nat64;
+  title : opt text;
+  description : opt text;
+  options : opt vec text;
+};
+type Proposal = record {
+  id : nat64;
+  reject : nat64;
+  title : text;
+  owner : principal;
+  voted : vec principal;
+  votes : vec nat64;
+  pass : nat64;
+  approve : nat64;
+  description : text;
+  created_at : nat64;
+  has_ended : bool;
+};
+type ProposalPayload = record { title : text; description : text };
+type Result = variant { Ok : Proposal; Err : VoteError };
+type VoteError = variant {
+  NotFound : record { msg : text };
+  InvalidOption : record { msg : text };
+  Unauthorized : record { msg : text };
+};
 service : {
-    "greet": (text) -> (text) query;
+  add_proposal : (ProposalPayload) -> (opt Proposal);
+  cast_vote : (nat64, nat64) -> (Result);
+  edit_proposal : (EditProposalPayload) -> (Result);
+  end_proposal : (nat64) -> (Result);
+  get_all_proposals : () -> (vec Proposal) query;
+  get_proposal : (nat64) -> (Result) query;
 }
