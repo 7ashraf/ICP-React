@@ -5,6 +5,7 @@ use ic_cdk::api::time;
 use ic_stable_structures::memory_manager::{MemoryId, MemoryManager, VirtualMemory};
 use ic_stable_structures::{BoundedStorable, Cell, DefaultMemoryImpl, StableBTreeMap, Storable};
 use std::{borrow::Cow, cell::RefCell};
+use std::collections::BTreeMap;
 
 type Memory = VirtualMemory<DefaultMemoryImpl>;
 type IdCell = Cell<u64, Memory>;
@@ -25,6 +26,10 @@ struct Proposal {
 
 }
 
+type IdStore = BTreeMap<String, Principal>;
+type ProposalStore = BTreeMap<u64, Proposal>;
+
+
 impl Storable for Proposal {
     fn to_bytes(&self) -> Cow<[u8]> {
         Cow::Owned(Encode!(self).unwrap())
@@ -35,10 +40,6 @@ impl Storable for Proposal {
     }
 }
 
-impl BoundedStorable for Proposal {
-    const MAX_SIZE: u32 = 1024;
-    const IS_FIXED_SIZE: bool = false;
-}
 
 thread_local! {
     static MEMORY_MANAGER: RefCell<MemoryManager<DefaultMemoryImpl>> = RefCell::new(
@@ -50,10 +51,14 @@ thread_local! {
             .expect("Cannot create a counter")
     );
 
-    static PROPOSAL_STORAGE: RefCell<StableBTreeMap<u64, Proposal, Memory>> =
-        RefCell::new(StableBTreeMap::init(
-            MEMORY_MANAGER.with(|m| m.borrow().get(MemoryId::new(1)))
-    ));
+    static ID_STORE: RefCell<IdStore> = RefCell::default();
+
+
+    // static PROPOSAL_STORAGE: RefCell<StableBTreeMap<u64, Proposal, Memory>> =
+    //     RefCell::new(StableBTreeMap::init(
+    //         MEMORY_MANAGER.with(|m| m.borrow().get(MemoryId::new(1)))
+    // ));
+    static PROPOSAL_STORAGE: RefCell<ProposalStore> = RefCell::default();
 }
 #[derive(candid::CandidType, Serialize, Deserialize, Default)]
 struct ProposalPayload {
@@ -100,7 +105,7 @@ enum VoteError {
 fn cast_vote(proposal_id: u64, option_index: usize) -> Result<Proposal, VoteError> {
     PROPOSAL_STORAGE.with(|proposal_storage| {
         let mut proposal_storage = proposal_storage.borrow_mut();
-        if let Some(mut proposal) = proposal_storage.get(&proposal_id) {
+        if let Some(mut proposal) = proposal_storage.get(&proposal_id).cloned() {
             if option_index == 0{
                 proposal.approve += 1;
                 proposal_storage.insert(proposal_id, proposal.clone());
@@ -167,7 +172,7 @@ struct EditProposalPayload {
 fn edit_proposal(payload: EditProposalPayload) -> Result<Proposal, VoteError> {
     PROPOSAL_STORAGE.with(|proposal_storage| {
         let mut proposal_storage = proposal_storage.borrow_mut();
-        if let Some(mut proposal) = proposal_storage.get(&payload.id) {
+        if let Some(mut proposal) = proposal_storage.get(&payload.id).cloned() {
             if proposal.owner != ic_cdk::caller() {
                 return Err(VoteError::Unauthorized {
                     msg: "Only the owner can edit the proposal".to_string(),
@@ -205,7 +210,7 @@ fn edit_proposal(payload: EditProposalPayload) -> Result<Proposal, VoteError> {
 fn end_proposal(proposal_id: u64) -> Result<Proposal, VoteError> {
     PROPOSAL_STORAGE.with(|proposal_storage| {
         let mut proposal_storage = proposal_storage.borrow_mut();
-        if let Some(mut proposal) = proposal_storage.get(&proposal_id) {
+        if let Some(mut proposal) = proposal_storage.get(&proposal_id).cloned() {
             if proposal.owner != ic_cdk::caller() {
                 return Err(VoteError::Unauthorized {
                     msg: "Only the owner can end the proposal".to_string(),
